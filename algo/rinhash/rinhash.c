@@ -7,13 +7,12 @@
 #include <malloc.h>  // _aligned_malloc, _aligned_free
 #include "blake3/blake3.h"
 #include "blake3/blake3_impl.h"
-#include "../verthash/tiny_sha3/sha3.h"
+#include "sha3/SimpleFIPS202.h"
 #include "../argon2d/argon2d/argon2.h"  // Update path to argon2d header
 
 typedef struct {
     blake3_hasher blake;
     argon2_context argon;
-    sha3_ctx_t sha3;
 } rin_context_holder;
 
 
@@ -62,9 +61,7 @@ void rinhash(void* state, const void* input)
     
     // SHA3-256
     uint8_t sha3_out[32];
-    sha3_init(&rin_ctx->sha3, 32);
-    sha3_update(&rin_ctx->sha3, argon2_out, 32);
-    sha3_final(sha3_out, &rin_ctx->sha3);
+    SHA3_256(sha3_out, (const uint8_t *)argon2_out, 32);
     
     memcpy(state, sha3_out, 32);
 }
