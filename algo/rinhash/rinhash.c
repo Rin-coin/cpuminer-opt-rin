@@ -80,8 +80,7 @@ int scanhash_rin( struct work *work, uint32_t max_nonce,
     do {
         pdata[19] = nonce;
         rinhash(hash, pdata);
-        if (hash[7] <= Htarg && fulltest(hash, ptarget)) {
-            // Found a valid solution
+        if (fulltest((uint8_t*)hash, (uint8_t*)ptarget)) {
             *hashes_done = nonce - first_nonce + 1;
             pdata[19] = nonce;
             return 1;

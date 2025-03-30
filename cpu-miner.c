@@ -118,6 +118,7 @@ int opt_param_n = 0;
 int opt_param_r = 0;
 int opt_n_threads = 0;
 bool opt_sapling = false;
+bool opt_mweb = false;     // add mweb option definition
 static uint64_t opt_affinity = 0xFFFFFFFFFFFFFFFFULL;  // default, use all cores
 int opt_priority = 0;  // deprecated
 int num_cpus = 1;
@@ -1064,7 +1065,7 @@ void report_summary_log( bool force )
    uint64_t accepts = accept_sum;  accept_sum = 0;
    uint64_t rejects = reject_sum;  reject_sum = 0;
    uint64_t stales  = stale_sum;   stale_sum  = 0;
-   uint64_t solved  = solved_sum;  solved_sum = 0;
+   uint64_t solved  = solved_sum;  solved_sum  = 0;
    memcpy( &start_time, &five_min_start, sizeof start_time );
    memcpy( &five_min_start, &now, sizeof now );
 
@@ -1505,6 +1506,7 @@ const char *getwork_req =
 #define GBT_CAPABILITIES "[\"coinbasetxn\", \"coinbasevalue\", \"longpoll\", \"workid\"]"
 
 #define GBT_RULES "[\"segwit\"]"
+#define GBT_MWEB_RULES "[\"segwit\", \"mweb\"]"
 
 static const char *gbt_req =
    "{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
@@ -1512,6 +1514,14 @@ static const char *gbt_req =
 const char *gbt_lp_req =
    "{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
    GBT_CAPABILITIES ", \"rules\": " GBT_RULES ", \"longpollid\": \"%s\"}], \"id\":0}\r\n";
+
+static const char *gbt_mweb_req =
+"{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
+GBT_CAPABILITIES ", \"rules\": " GBT_MWEB_RULES "}], \"id\":0}\r\n";
+const char *gbt_lp_mweb_req =
+"{\"method\": \"getblocktemplate\", \"params\": [{\"capabilities\": "
+GBT_CAPABILITIES ", \"rules\": " GBT_MWEB_RULES ", \"longpollid\": \"%s\"}], \"id\":0}\r\n";
+
 
 static bool get_upstream_work( CURL *curl, struct work *work )
 {
@@ -1522,10 +1532,14 @@ static bool get_upstream_work( CURL *curl, struct work *work )
 
 start:
    gettimeofday( &tv_start, NULL );
-
-   val = json_rpc_call( curl, rpc_url, rpc_userpass,
-		           have_gbt ? gbt_req : getwork_req, &err,
+   if ( opt_mweb )
+      val = json_rpc_call( curl, rpc_url, rpc_userpass,
+                 have_gbt ? gbt_mweb_req : getwork_req, &err,
                            have_gbt ? JSON_RPC_QUIET_404 : 0);
+   else
+      val = json_rpc_call( curl, rpc_url, rpc_userpass,
+      have_gbt ? gbt_req : getwork_req, &err,
+                have_gbt ? JSON_RPC_QUIET_404 : 0);
  
    gettimeofday( &tv_end, NULL );
 
@@ -1654,7 +1668,7 @@ static void workio_cmd_free(struct workio_cmd *wc)
 		work_free(wc->u.work);
 		free(wc->u.work);
 		break;
-	default: /* do nothing */
+	default:		/* do nothing */
 		break;
 	}
 
@@ -2434,8 +2448,15 @@ json_t *std_longpoll_rpc_call( CURL *curl, int *err, char* lp_url )
    char *req = NULL;
    if (have_gbt)
    {
-       req = (char*) malloc( strlen(gbt_lp_req) + strlen(lp_id) + 1 );
-       sprintf( req, gbt_lp_req, lp_id );
+       if (opt_mweb) {
+          req = (char*) malloc( strlen(gbt_lp_mweb_req) + strlen(lp_id) + 1 );
+          sprintf( req, gbt_lp_mweb_req, lp_id );
+       }
+       else
+       {
+          req = (char*) malloc( strlen(gbt_lp_req) + strlen(lp_id) + 1 );
+          sprintf( req, gbt_lp_req, lp_id );
+       }
    }
    val = json_rpc_call( curl, rpc_url, rpc_userpass, getwork_req, err,
                         JSON_RPC_LONGPOLL );
@@ -3054,7 +3075,7 @@ static bool cpu_capability( bool display_only )
         else if ( sw_has_sme     )   printf( " SME"    );
      }
      if         ( sw_has_vaes    )   printf( " VAES"   );
-     else if    ( sw_has_aes     )   printf( "  AES"   );
+     else if    ( sw_has_aes     )   printf( " AES"    );
      if         ( sw_has_sha512  )   printf( " SHA512" );
      else if    ( sw_has_sha256  )   printf( " SHA256" );
 
@@ -3068,12 +3089,12 @@ static bool cpu_capability( bool display_only )
         else
         {
            if      ( algo_has_avx512 )  printf( " AVX512" );
-           else if ( algo_has_avx2   )  printf( " AVX2  " );
+           else if ( algo_has_avx2   )  printf( " AVX2"   );
            else if ( algo_has_sse42  )  printf( " SSE4.2" );
-           else if ( algo_has_sse2   )  printf( " SSE2  " );
+           else if ( algo_has_sse2   )  printf( " SSE2"   );
            if      ( algo_has_neon   )  printf( " NEON"   );
            if      ( algo_has_vaes   )  printf( " VAES"   );
-           else if ( algo_has_aes    )  printf( "  AES"   );
+           else if ( algo_has_aes    )  printf( " AES"    );
            if      ( algo_has_sha512 )  printf( " SHA512" );
            else if ( algo_has_sha256 )  printf( " SHA256" );
         }
@@ -3570,7 +3591,9 @@ void parse_arg(int key, char *arg )
       exit(0);
 	case 'h':   // help
 		show_usage_and_exit(0);
-
+   case 1032:  // --mweb
+      opt_mweb = true;
+      break;
    default:
 		show_usage_and_exit(1);
 	}

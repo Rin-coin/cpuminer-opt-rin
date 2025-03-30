@@ -822,6 +822,7 @@ extern uint32_t solved_block_count;
 extern pthread_mutex_t applog_lock;
 extern pthread_mutex_t stats_lock;
 extern bool opt_sapling;
+extern bool opt_mweb;     // add mweb option declaration
 extern const int pk_buffer_size_max;
 extern int pk_buffer_size;
 extern char *opt_data_file;
@@ -970,6 +971,7 @@ Options:\n\
       --max-temp=N      only mine if cpu temp is less than specified value (linux)\n\
       --max-rate=N[KMG] only mine if net hashrate is less than specified value\n\
       --max-diff=N      only mine if net difficulty is less than specified value\n\
+      --mweb            enable MWEB support\n\
   -c, --config=FILE     load a JSON-format configuration file\n\
       --data-file=FILE  path and name of data file\n\
       --verify          enable additional time consuming start up tests\n\
@@ -1046,6 +1048,7 @@ static struct option const options[] = {
         { "stratum-keepalive", 0, NULL, 1029 },
         { "version", 0, NULL, 'V' },
         { "bell", 0, NULL, 1031 },
+        { "mweb", 0, NULL, 1032 },       
         { 0, 0, 0, 0 }
 };
 
