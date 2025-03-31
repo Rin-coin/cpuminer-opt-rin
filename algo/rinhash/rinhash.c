@@ -92,27 +92,27 @@ uint32_t n = pdata[19] - 1;
 const uint32_t first_nonce = pdata[19];
 int thr_id = mythr->id;
 uint8_t hash[32];
+uint32_t edata[20];  // BEに変換したブロックヘッダ
+swab32_array(edata, pdata, 20);  // リトル → ビッグ
 
 do {
-n++;
-pdata[19] = n;
+be32enc(&edata[19], nonce);
+
 
 // 80バイトのブロックヘッダをrinhash()に渡す
-rinhash((uint8_t *)pdata, hash);
+rinhash((uint8_t *)edata, hash);
 
-// ビッグエンディアンに変換して比較
-uint32_t hash_be[8];
-for (int i = 0; i < 8; i++)
-be32enc(&hash_be[i], ((uint32_t *)hash)[7 - i]);
 
-if (fulltest(hash_be, ptarget)) {
+if (fulltest(hash, ptarget)) {
+pdata[19] = n;
 submit_solution(work, hash_be, mythr);
 break;
 }
+n++;
 } while (n < max_nonce && !work_restart[thr_id].restart);
-
-*hashes_done = n - first_nonce + 1;
 pdata[19] = n;
+*hashes_done = n - first_nonce + 1;
+
 return 0;
 }
 
