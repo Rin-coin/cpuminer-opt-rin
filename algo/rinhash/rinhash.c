@@ -105,7 +105,7 @@ rinhash((uint8_t *)edata, hash);
 
 if (fulltest(hash, ptarget)) {
 pdata[19] = n;
-submit_solution(work, hash_be, mythr);
+submit_solution(work, hash, mythr);
 break;
 }
 n++;
