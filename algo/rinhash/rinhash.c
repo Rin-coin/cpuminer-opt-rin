@@ -16,13 +16,29 @@ typedef struct {
 } rin_context_holder;
 
 
+#ifdef _WIN32
+    #include <malloc.h>
+    #define aligned_malloc _aligned_malloc
+    #define aligned_free   _aligned_free
+#else
+void* aligned_malloc(size_t size, size_t alignment) {
+    void* ptr = NULL;
+    if (posix_memalign(&ptr, alignment, size) != 0) return NULL;
+    return ptr;
+}
+
+void aligned_free(void* ptr) {
+    free(ptr);
+}
+#endif
+
 __thread rin_context_holder* rin_ctx;
 
 // RinHash implementation
 void rinhash(void* state, const void* input)
 {
     if (rin_ctx == NULL) {
-        rin_ctx = (rin_context_holder*) _aligned_malloc(sizeof(rin_context_holder), 64);
+        rin_ctx = (rin_context_holder*) aligned_malloc(sizeof(rin_context_holder), 64);
         if (!rin_ctx) {
             fprintf(stderr, "Failed to allocate rin_ctx\n");
             memset(state, 0, 32);
@@ -67,36 +83,43 @@ void rinhash(void* state, const void* input)
 }
 
 // Scanhash implementation 
-int scanhash_rin( struct work *work, uint32_t max_nonce,
-                  uint64_t *hashes_done, struct thr_info *mythr )
+int scanhash_rinhash(struct work *work, uint32_t max_nonce,
+    uint64_t *hashes_done, struct thr_info *mythr)
 {
-    uint32_t _ALIGN(128) hash[8];
-    uint32_t *pdata = work->data;
-    uint32_t *ptarget = work->target;
-    const uint32_t first_nonce = pdata[19];
-    const uint32_t Htarg = ptarget[7];
-    uint32_t nonce = first_nonce;
+uint32_t *pdata = work->data;
+uint32_t *ptarget = work->target;
+uint32_t n = pdata[19] - 1;
+const uint32_t first_nonce = pdata[19];
+int thr_id = mythr->id;
+uint8_t hash[32];
 
-    do {
-        pdata[19] = nonce;
-        rinhash(hash, pdata);
-        if (fulltest((uint8_t*)hash, (uint8_t*)ptarget)) {
-            *hashes_done = nonce - first_nonce + 1;
-            pdata[19] = nonce;
-            return 1;
-        }
-        nonce++;
-    } while (nonce < max_nonce && !work_restart[mythr->id].restart);
+do {
+n++;
+pdata[19] = n;
 
-    *hashes_done = nonce - first_nonce + 1;
-    pdata[19] = nonce;
-    return 0;
+// 80バイトのブロックヘッダをrinhash()に渡す
+rinhash((uint8_t *)pdata, hash);
+
+// ビッグエンディアンに変換して比較
+uint32_t hash_be[8];
+for (int i = 0; i < 8; i++)
+be32enc(&hash_be[i], ((uint32_t *)hash)[7 - i]);
+
+if (fulltest(hash_be, ptarget)) {
+submit_solution(work, hash_be, mythr);
+break;
+}
+} while (n < max_nonce && !work_restart[thr_id].restart);
+
+*hashes_done = n - first_nonce + 1;
+pdata[19] = n;
+return 0;
 }
 
 // Register algorithm
 bool register_rin_algo( algo_gate_t* gate )
 {
-    gate->scanhash = (void*)&scanhash_rin;
+    gate->scanhash = (void*)&scanhash_rinhash;
     gate->hash = (void*)&rinhash;
     gate->optimizations = SSE2_OPT | AVX2_OPT | AVX512_OPT;
     return true;
