@@ -82,38 +82,39 @@ void rinhash(void* state, const void* input)
     memcpy(state, sha3_out, 32);
 }
 
-// Scanhash implementation 
 int scanhash_rinhash(struct work *work, uint32_t max_nonce,
     uint64_t *hashes_done, struct thr_info *mythr)
 {
-uint32_t *pdata = work->data;
-uint32_t *ptarget = work->target;
-uint32_t n = pdata[19] - 1;
-const uint32_t first_nonce = pdata[19];
-int thr_id = mythr->id;
-uint8_t hash[32];
-uint32_t edata[20];  // BEに変換したブロックヘッダ
-swab32_array(edata, pdata, 20);  // リトル → ビッグ
+    // work->data, work->target はリトルエンディアンの想定
+    uint32_t *pdata = work->data;
+    uint32_t *ptarget = work->target;
+    uint32_t n = pdata[19] - 1;
+    const uint32_t first_nonce = pdata[19];
+    int thr_id = mythr->id;
+    // RinHash の出力先（32バイト）
+    uint8_t hash[32];
 
-do {
-be32enc(&edata[19], n);
+    // 余計な配列(edata) は削除し、swab32_array も呼ばない
+    // be32enc も呼ばない。nonce はリトルエンディアンで直接 pdata[19] に代入すればOK
 
+    do {
+        n++;
+        pdata[19] = n;  // これで nonce はリトルエンディアンのまま書き込まれる
 
-// 80バイトのブロックヘッダをrinhash()に渡す
-rinhash((uint8_t *)edata, hash);
+        // pdata は既にリトルエンディアンのブロックヘッダなので、そのまま渡す
+        rinhash((uint8_t *)pdata, (uint8_t *)hash);
 
+        // ハッシュとターゲットを比較（little-endian 同士）
+        if (fulltest(hash, ptarget)) {
+            pdata[19] = n;
+            submit_solution(work, hash, mythr);
+            break;
+        }
+    } while (n < max_nonce && !work_restart[thr_id].restart);
 
-if (fulltest(hash, ptarget)) {
-pdata[19] = n;
-submit_solution(work, hash, mythr);
-break;
-}
-n++;
-} while (n < max_nonce && !work_restart[thr_id].restart);
-pdata[19] = n;
-*hashes_done = n - first_nonce + 1;
-
-return 0;
+    pdata[19] = n;
+    *hashes_done = n - first_nonce + 1;
+    return 0;
 }
 
 // Register algorithm
