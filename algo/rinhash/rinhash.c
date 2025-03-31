@@ -96,7 +96,7 @@ uint32_t edata[20];  // BEに変換したブロックヘッダ
 swab32_array(edata, pdata, 20);  // リトル → ビッグ
 
 do {
-be32enc(&edata[19], nonce);
+be32enc(&edata[19], n);
 
 
 // 80バイトのブロックヘッダをrinhash()に渡す
