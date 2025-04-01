@@ -102,7 +102,7 @@ int scanhash_rinhash(struct work *work, uint32_t max_nonce,
         pdata[19] = n;  // これで nonce はリトルエンディアンのまま書き込まれる
 
         // pdata は既にリトルエンディアンのブロックヘッダなので、そのまま渡す
-        rinhash((uint8_t *)pdata, (uint8_t *)hash);
+        rinhash((uint8_t *)hash, (uint8_t *)pdata);
 
         // ハッシュとターゲットを比較（little-endian 同士）
         if (fulltest(hash, ptarget)) {
