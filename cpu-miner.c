@@ -56,6 +56,9 @@
 #include <sys/param.h>
 #endif
 
+
+
+
 // GCC 9 warning sysctl.h is deprecated
 #if ( __GNUC__ < 9 )
 #include <sys/sysctl.h>
@@ -79,6 +82,18 @@
 #ifdef _MSC_VER
 #include <Mmsystem.h>
 #pragma comment(lib, "winmm.lib")
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+    // Windows (MinGWなど) 向け：LEなので変換が必要な場合は bswap を使う
+    static inline uint32_t htole32(uint32_t x) {
+        return ((x >> 24) & 0x000000FF) |
+               ((x >> 8)  & 0x0000FF00) |
+               ((x << 8)  & 0x00FF0000) |
+               ((x << 24) & 0xFF000000);
+    }
+#else
+    // Linux/Unix：標準の htole32 を使う
+    #include <endian.h>
 #endif
 
 #define LP_SCANTIME		60
@@ -882,10 +897,10 @@ static bool gbt_work_decode( const json_t *val, struct work *work )
       goto out;
    }
 
-   // reverse the bytes in target
-   casti_v128( work->target, 0 ) = v128_bswap128( casti_v128( target, 1 ) );
-   casti_v128( work->target, 1 ) = v128_bswap128( casti_v128( target, 0 ) );
-   net_diff = work->targetdiff = hash_to_diff( work->target );
+   for (int i = 0; i < 32; i++) {
+      ((uint8_t*)work->target)[i] = ((uint8_t*)target)[31 - i];
+   }
+   net_diff = work->targetdiff = hash_to_diff(work->target);
 
    tmp = json_object_get( val, "workid" );
    if ( tmp )
@@ -2654,7 +2669,9 @@ void std_build_block_header( struct work* g_work, uint32_t version,
    for ( i = 0; i < 8; i++ )
       g_work->data[ 9+i ] = be32dec( merkle_tree + i );
    g_work->data[ algo_gate.ntime_index ] = ntime;
+   nbits = htole32(nbits);  // Little Endian に
    g_work->data[ algo_gate.nbits_index ] = nbits;
+   g_work->data[ algo_gate.nonce_index ] = 0;
 
    if ( g_work->sapling )
    {
