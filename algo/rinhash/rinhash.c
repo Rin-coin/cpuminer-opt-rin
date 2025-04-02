@@ -111,6 +111,7 @@ int scanhash_rinhash(struct work *work, uint32_t max_nonce,
         if (fulltest(hash_reversed, ptarget)) {  // hash_reversed を使って比較する
             pdata[19] = n;
             submit_solution(work, hash_reversed, mythr);
+            break;
         }
     } while (n < max_nonce && !work_restart[thr_id].restart);
 
