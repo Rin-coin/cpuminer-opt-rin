@@ -82,13 +82,6 @@ void rinhash(void* state, const void* input)
     memcpy(state, sha3_out, 32);
 }
 
-// 32バイトをワード単位で逆順に並び替える関数
-void reverse_words(uint8_t* out, const uint8_t* in) {
-    for (int i = 0; i < 8; i++) {
-        memcpy(out + (i * 4), in + ((7 - i) * 4), 4);
-    }
-}
-
 int scanhash_rinhash(struct work *work, uint32_t max_nonce,
     uint64_t *hashes_done, struct thr_info *mythr)
 {
@@ -98,19 +91,23 @@ int scanhash_rinhash(struct work *work, uint32_t max_nonce,
     const uint32_t first_nonce = pdata[19];
     int thr_id = mythr->id;
     uint8_t hash[32];
-    uint8_t hash_reversed[32];  // 逆順にするためのバッファを追加
 
     do {
         n++;
         pdata[19] = n;
 
         rinhash(hash, pdata);
+        uint32_t hash32[8];
 
-        reverse_words(hash_reversed, hash);  // ←ここで逆順にする必要がある
-
-        if (fulltest(hash_reversed, ptarget)) {  // hash_reversed を使って比較する
-            pdata[19] = n;
-            submit_solution(work, hash_reversed, mythr);
+        // 安全に変換（リトルエンディアン）
+        for (int i = 0; i < 8; i++) {
+            hash32[i] = ((uint32_t)hash[i*4 + 0]) |
+                        ((uint32_t)hash[i*4 + 1] << 8) |
+                        ((uint32_t)hash[i*4 + 2] << 16) |
+                        ((uint32_t)hash[i*4 + 3] << 24);
+}
+        if (fulltest(hash32, ptarget)) {
+            submit_solution(work, hash, mythr);
             break;
         }
     } while (n < max_nonce && !work_restart[thr_id].restart);

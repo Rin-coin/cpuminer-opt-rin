@@ -40,7 +40,6 @@
 //#include <mm_malloc.h>
 #include "sysinfos.c"
 #include "algo/sha/sha256d.h"
-
 #ifdef WIN32
 #include <winsock2.h>
 #include <windows.h>
@@ -91,6 +90,12 @@
                ((x << 8)  & 0x00FF0000) |
                ((x << 24) & 0xFF000000);
     }
+    static inline uint32_t htobe32(uint32_t x) {
+      return ((x >> 24) & 0x000000FF) |
+             ((x >> 8)  & 0x0000FF00) |
+             ((x << 8)  & 0x00FF0000) |
+             ((x << 24) & 0xFF000000);
+  }
 #else
     // Linux/Unix：標準の htole32 を使う
     #include <endian.h>
@@ -617,7 +622,7 @@ static bool gbt_work_decode( const json_t *val, struct work *work )
          goto out;
       }
    }
-
+   
    if ( unlikely( !jobj_binary(val, "previousblockhash", prevhash,
         sizeof(prevhash)) ) )
    {
@@ -633,11 +638,13 @@ static bool gbt_work_decode( const json_t *val, struct work *work )
    }
    curtime = (uint32_t) json_integer_value(tmp);
 
-   if ( unlikely( !jobj_binary( val, "bits", &bits, sizeof(bits) ) ) )
+   uint32_t bits_be;
+   if ( unlikely( !jobj_binary( val, "bits", &bits_be, sizeof(bits_be) ) ) )
    {
-      applog(LOG_ERR, "JSON invalid bits");
-      goto out;
+       applog(LOG_ERR, "JSON invalid bits");
+       goto out;
    }
+   bits = be32dec(&bits_be);
 
    if ( work->sapling )
    {
@@ -886,9 +893,9 @@ static bool gbt_work_decode( const json_t *val, struct work *work )
    work->tx_count = tx_count;
 
    /* assemble block header */
-   algo_gate.build_block_header( work, swab32( version ),
+   algo_gate.build_block_header( work, version,
                                  (uint32_t*) prevhash, (uint32_t*) merkle_tree,
-                                 swab32( curtime ), le32dec( &bits ),
+                                 curtime, bits,
                                  final_sapling_hash );
 
    if ( unlikely( !jobj_binary( val, "target", target, sizeof(target) ) ) )
@@ -1423,41 +1430,41 @@ bool std_be_submit_getwork_result( CURL *curl, struct work *work )
    return true;
 }
 
-char* std_malloc_txs_request( struct work *work )
+char* std_malloc_txs_request(struct work *work)
 {
-  char *req;
-  json_t *val;
-  char data_str[2 * sizeof(work->data) + 1];
-  int i;
-  // datasize is an ugly hack, it should go through the gate
-  int datasize = work->sapling ? 112 : 80;
+    char *req;
+    json_t *val;
+    char data_str[2 * sizeof(work->data) + 1];
+    int i;
+    int datasize = work->sapling ? 112 : 80;
+    // この処理に変更する：
+    bin2hex(data_str, (unsigned char *)work->data, datasize);
 
-  for ( i = 0; i < ARRAY_SIZE(work->data); i++ )
-     be32enc( work->data + i, work->data[i] );
-  bin2hex( data_str, (unsigned char *)work->data, datasize );
-  if ( work->workid )
-  {
-    char *params;
-    val = json_object();
-    json_object_set_new( val, "workid", json_string( work->workid ) );
-    params = json_dumps( val, 0 );
-    json_decref( val );
-    req = (char*) malloc( 128 + 2 * datasize + strlen( work->txs )
-                            + strlen( params ) );
-    sprintf( req,
-     "{\"method\": \"submitblock\", \"params\": [\"%s%s\", %s], \"id\":4}\r\n",
-      data_str, work->txs, params );
-    free( params );
-  }
-  else
-  {
-    req = (char*) malloc( 128 + 2 * datasize + strlen( work->txs ) );
-    sprintf( req,
-         "{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
-         data_str, work->txs);
-  }
-  return req;
-} 
+
+    if (work->workid)
+    {
+        char *params;
+        val = json_object();
+        json_object_set_new(val, "workid", json_string(work->workid));
+        params = json_dumps(val, 0);
+        json_decref(val);
+        req = (char *)malloc(128 + 2 * datasize + strlen(work->txs) + strlen(params));
+        sprintf(req,
+                "{\"method\": \"submitblock\", \"params\": [\"%s%s\", %s], \"id\":4}\r\n",
+                data_str, work->txs, params);
+        free(params);
+    }
+    else
+    {
+        req = (char *)malloc(128 + 2 * datasize + strlen(work->txs));
+        sprintf(req,
+                "{\"method\": \"submitblock\", \"params\": [\"%s%s\"], \"id\":4}\r\n",
+                data_str, work->txs);
+    }
+
+    return req;
+}
+
 
 static bool submit_upstream_work( CURL *curl, struct work *work )
 {
@@ -2662,14 +2669,13 @@ void std_build_block_header( struct work* g_work, uint32_t version,
    g_work->data[0] = version;
    g_work->sapling = opt_sapling;
 
-   if ( have_stratum ) for ( i = 0; i < 8; i++ )
-         g_work->data[ 1+i ] = le32dec( prevhash + i );
-   else for (i = 0; i < 8; i++)
-         g_work->data[ 8-i ] = le32dec( prevhash + i );
-   for ( i = 0; i < 8; i++ )
-      g_work->data[ 9+i ] = be32dec( merkle_tree + i );
+   for (int i = 0; i < 8; i++)
+      g_work->data[1 + i] = swab32(prevhash[7 - i]);
+   //for ( i = 0; i < 8; i++ )
+   //   g_work->data[ 9+i ] = be32dec( merkle_tree + i );
+   memcpy(&g_work->data[9], merkle_tree, 32);
    g_work->data[ algo_gate.ntime_index ] = ntime;
-   g_work->data[ algo_gate.nbits_index ] = le32dec(&nbits);
+   g_work->data[ algo_gate.nbits_index ] = nbits;
    g_work->data[ algo_gate.nonce_index ] = 0;
 
    if ( g_work->sapling )
