@@ -2668,8 +2668,12 @@ void std_build_block_header( struct work* g_work, uint32_t version,
    memset( g_work->data, 0, sizeof(g_work->data) );
    g_work->data[0] = version;
    g_work->sapling = opt_sapling;
-
-   for (int i = 0; i < 8; i++)
+   if (have_stratum) {
+      g_work->data[0] = swab32(version);
+      for (int i = 0; i < 8; i++)
+         g_work->data[1 + i] = swab32(prevhash[i]);
+   }
+   else for (int i = 0; i < 8; i++)
       g_work->data[1 + i] = swab32(prevhash[7 - i]);
    //for ( i = 0; i < 8; i++ )
    //   g_work->data[ 9+i ] = be32dec( merkle_tree + i );
@@ -2706,9 +2710,9 @@ void std_build_extraheader( struct work* g_work, struct stratum_ctx* sctx )
    uchar merkle_tree[64] = { 0 };
 
    algo_gate.gen_merkle_root( merkle_tree, sctx );
-   algo_gate.build_block_header( g_work, le32dec( sctx->job.version ),
+   algo_gate.build_block_header( g_work, le32dec(sctx->job.version),
           (uint32_t*) sctx->job.prevhash, (uint32_t*) merkle_tree,
-          le32dec( sctx->job.ntime ), le32dec(sctx->job.nbits),
+          swab32(le32dec(sctx->job.ntime)), swab32(le32dec(sctx->job.nbits)),
           sctx->job.final_sapling_hash );
 }
 
