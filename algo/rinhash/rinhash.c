@@ -61,7 +61,7 @@ void rinhash(void* state, const void* input)
     context.salt = (uint8_t*)salt_str;
     context.saltlen = strlen(salt_str);
     context.t_cost = 2;
-    context.m_cost = 64;
+    context.m_cost = 64000;
     context.lanes = 1;
     context.threads = 1;
     context.version = ARGON2_VERSION_13;
